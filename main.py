@@ -8,6 +8,12 @@ from fastapi.responses import HTMLResponse
 
 app = FastAPI()
 
+# ----------------------------------------------------
+# CONFIGURAÇÃO DE VERSÃO E ATUALIZAÇÕES DOS PATCHES
+# ----------------------------------------------------
+VERSAO_LATEST = "1.0.1"
+URL_DIRECT_DOWNLOAD = "https://drive.google.com/uc?export=download&id=12FKnuvwMMzLKMWz-CcnRXzsatnoIsL5v"
+
 # Arquivo para salvar o banco de dados de licenças em disco
 DB_FILE = "licencas_db.json"
 
@@ -17,7 +23,6 @@ def carregar_db():
         try:
             with open(DB_FILE, "r", encoding="utf-8") as f:
                 dados = json.load(f)
-                # Converte strings ISO de data de volta para datetime com timezone
                 for chave, info in dados.items():
                     if "data_criacao" in info and isinstance(info["data_criacao"], str):
                         info["data_criacao"] = datetime.fromisoformat(info["data_criacao"])
@@ -34,7 +39,6 @@ def salvar_db():
         dados_para_salvar = {}
         for chave, info in LICENCAS_DB.items():
             info_copy = info.copy()
-            # Converte datetime para string ISO para poder salvar no JSON
             if isinstance(info_copy.get("data_criacao"), datetime):
                 info_copy["data_criacao"] = info_copy["data_criacao"].isoformat()
             dados_para_salvar[chave] = info_copy
@@ -89,7 +93,20 @@ def enviar_email_chave(email_destino: str, chave: str, plano: str = "Ativada"):
 
 @app.get("/")
 def home():
-    return {"status": "Servidor de Licenças Online", "total_licencas": len(LICENCAS_DB)}
+    return {"status": "Servidor de Licenças Online", "total_licencas": len(LICENCAS_DB), "versao_atual": VERSAO_LATEST}
+
+# ----------------------------------------------------
+# ROTA DE ATUALIZAÇÃO DO APLICATIVO (PATCHES AUTO)
+# ----------------------------------------------------
+@app.get("/checar_atualizacao")
+def checar_atualizacao(versao_cliente: str = "1.0.0"):
+    if versao_cliente != VERSAO_LATEST:
+        return {
+            "tem_atualizacao": True,
+            "versao": VERSAO_LATEST,
+            "url": URL_DIRECT_DOWNLOAD
+        }
+    return {"tem_atualizacao": False}
 
 # ----------------------------------------------------
 # ROTA DE VALIDAÇÃO (HWID + STATUS + DIAS MENSAL)
@@ -101,7 +118,6 @@ def validar_chave(chave: str, hwid: str = None):
     if chave in LICENCAS_DB:
         info = LICENCAS_DB[chave]
         
-        # 1. Checa se foi reembolsada ou cancelada
         if info.get("status") != "ativa":
             return {
                 "valido": False,
@@ -109,15 +125,12 @@ def validar_chave(chave: str, hwid: str = None):
                 "motivo": "Licença Bloqueada / Cancelada"
             }
 
-        # 2. Trava de Hardware (1 PC por Licença)
         if hwid:
             hwid_registrado = info.get("hwid")
             if hwid_registrado is None:
-                # Primeiro PC a ativar esta chave -> Registra o ID e salva no arquivo
                 info["hwid"] = hwid
                 salvar_db()
             elif hwid_registrado != hwid:
-                # Tentativa de uso em outro PC
                 return {
                     "valido": False,
                     "status_code": "BLOQUEADO_OUTRO_PC",
@@ -126,7 +139,6 @@ def validar_chave(chave: str, hwid: str = None):
 
         tipo = info.get("tipo", "Ativada")
         
-        # 3. Contagem regressiva para Plano Mensal (30 dias)
         if tipo == "Mensal":
             data_criacao = info.get("data_criacao")
             if data_criacao:
@@ -186,7 +198,6 @@ async def webhook_hotmart(request: Request):
 
     print(f"📌 Evento: {event} | Oferta: {offer_code} | E-mail: {email_comprador}")
 
-    # 1. COMPRA APROVADA
     if event in ["PURCHASE_APPROVED", "Compra aprovada", "Compra completa", "APPROVED"]:
         if offer_code == "12nhtlsk":
             tipo_plano = "Mensal"
@@ -205,15 +216,12 @@ async def webhook_hotmart(request: Request):
             "data_criacao": datetime.now(timezone.utc)
         }
         
-        # Salva imediatamente no arquivo de disco
         salvar_db()
-        
         print(f"✅ Nova licença gerada [{tipo_plano}]: {nova_chave} para {email_comprador}")
 
         if email_comprador:
             enviar_email_chave(email_comprador, nova_chave, tipo_plano)
 
-    # 2. REEMBOLSO / CANCELAMENTO / CHARGEBACK
     elif event in ["PURCHASE_REFUNDED", "PURCHASE_CANCELED", "PURCHASE_CHARGEBACK", "REFUNDED", "CANCELED"]:
         if email_comprador:
             chaves_bloqueadas = 0
