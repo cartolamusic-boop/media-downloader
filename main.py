@@ -1,7 +1,7 @@
 import os
 import uuid
 import requests
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse
 
@@ -54,15 +54,16 @@ def home():
     return {"status": "Servidor de Licenças Online"}
 
 # ----------------------------------------------------
-# ROTA DE VALIDAÇÃO COM CONTAGEM REGRESSIVA E BLOQUEIO
+# ROTA DE VALIDAÇÃO (HWID + STATUS + DIAS MENSAL)
 # ----------------------------------------------------
 @app.get("/validar")
-def validar_chave(chave: str):
+def validar_chave(chave: str, hwid: str = None):
     chave = chave.strip()
+    
     if chave in LICENCAS_DB:
         info = LICENCAS_DB[chave]
         
-        # Bloqueia caso tenha sido cancelada ou reembolsada
+        # 1. Checa se foi reembolsada ou cancelada
         if info.get("status") != "ativa":
             return {
                 "valido": False,
@@ -70,9 +71,23 @@ def validar_chave(chave: str):
                 "motivo": "Licença Bloqueada / Cancelada"
             }
 
+        # 2. Trava de Hardware (1 PC por Licença)
+        if hwid:
+            hwid_registrado = info.get("hwid")
+            if hwid_registrado is None:
+                # Primeiro PC a ativar esta chave -> Registra o ID
+                info["hwid"] = hwid
+            elif hwid_registrado != hwid:
+                # Tentativa de uso em outro PC
+                return {
+                    "valido": False,
+                    "status_code": "BLOQUEADO_OUTRO_PC",
+                    "motivo": "Esta chave já está ativada em outro computador!"
+                }
+
         tipo = info.get("tipo", "Ativada")
         
-        # Lógica de contagem regressiva para plano Mensal (30 dias)
+        # 3. Contagem regressiva para Plano Mensal (30 dias)
         if tipo == "Mensal":
             data_criacao = info.get("data_criacao")
             if data_criacao:
@@ -146,6 +161,7 @@ async def webhook_hotmart(request: Request):
             "email": email_comprador,
             "tipo": tipo_plano,
             "status": "ativa",
+            "hwid": None,  # Será registrado no primeiro uso
             "data_criacao": datetime.now(timezone.utc)
         }
         
@@ -154,7 +170,7 @@ async def webhook_hotmart(request: Request):
         if email_comprador:
             enviar_email_chave(email_comprador, nova_chave, tipo_plano)
 
-    # 2. REEMBOLSO OU CANCELAMENTO
+    # 2. REEMBOLSO / CANCELAMENTO / CHARGEBACK
     elif event in ["PURCHASE_REFUNDED", "PURCHASE_CANCELED", "PURCHASE_CHARGEBACK", "REFUNDED", "CANCELED"]:
         if email_comprador:
             chaves_bloqueadas = 0
