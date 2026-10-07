@@ -31,7 +31,7 @@ def enviar_email_chave(email_destino: str, chave: str, plano: str = "Ativada"):
     """
     mensagem.attach(MIMEText(corpo, 'plain', 'utf-8'))
 
-    # Tenta primeiro via SSL (Porta 465 - Mais estável em servidores cloud)
+    # Tenta conexão segura via SSL (Porta 465 - Mais estável em servidores cloud)
     try:
         server = smtplib.SMTP_SSL('smtp.gmail.com', 465, timeout=12)
         server.login(remetente, senha_app)
@@ -77,7 +77,7 @@ async def webhook_hotmart(request: Request, background_tasks: BackgroundTasks):
     elif "buyer_email" in dados:
         email_comprador = dados["buyer_email"]
 
-    # Identifica a oferta (Plano Mensal x Vitalício)
+    # Identifica o código da oferta
     offer_code = None
     if "data" in dados and "purchase" in dados["data"] and "offer" in dados["data"]["purchase"]:
         offer_code = dados["data"]["purchase"]["offer"].get("code")
@@ -86,11 +86,16 @@ async def webhook_hotmart(request: Request, background_tasks: BackgroundTasks):
 
     print(f"📌 Oferta recebida no Webhook: {offer_code}")
 
-    # Se for a oferta v50pkoyk OU se o código for diferente das ofertas padrão (ex: oferta de teste com cupom)
-    if offer_code == "v50pkoyk" or offer_code != "12nhtlsk":
+    # MAPEAMENTO CORRETO:
+    # off=12nhtlsk -> Mensal (R$ 19,90)
+    # off=v50pkoyk -> Vitalício (R$ 39,90)
+    if offer_code == "12nhtlsk":
         tipo_plano = "Mensal"
-    else:
+    elif offer_code == "v50pkoyk":
         tipo_plano = "Vitalício"
+    else:
+        # Padrão de segurança para ofertas de teste / cupons
+        tipo_plano = "Mensal"
 
     if event in ["PURCHASE_APPROVED", "Compra aprovada", "Compra completa", "APPROVED"]:
         nova_chave = f"MDPRO-{uuid.uuid4().hex[:8].upper()}"
