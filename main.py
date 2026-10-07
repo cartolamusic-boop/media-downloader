@@ -17,13 +17,13 @@ def enviar_email_chave(email_destino, chave):
     mensagem = MIMEMultipart()
     mensagem['From'] = remetente
     mensagem['To'] = email_destino
-    mensagem['Subject'] = "Sua Chave de Licença - Media Downloader Studio Pro"
+    mensagem['Subject'] = f"Sua Chave de Licença ({plano}) - Media Downloader Studio Pro"
 
     corpo = f"""
     Olá!
 
     Sua compra foi aprovada com sucesso!
-    Sua chave de licença para ativar o Media Downloader Studio Pro é:
+    Sua chave de licença ({plano}) para ativar o Media Downloader Studio Pro é:
 
     CHAVE: {chave}
 
@@ -65,19 +65,31 @@ async def webhook_hotmart(request: Request, background_tasks: BackgroundTasks):
     elif "buyer_email" in dados:
         email_comprador = dados["buyer_email"]
 
+    # Identifica a oferta (Plano Mensal x Vitalício)
+    offer_code = None
+    if "data" in dados and "purchase" in dados["data"] and "offer" in dados["data"]["purchase"]:
+        offer_code = dados["data"]["purchase"]["offer"].get("code")
+    elif "offer" in dados:
+        offer_code = dados.get("offer")
+
+    # Define o tipo de plano baseado na oferta da Hotmart
+    if offer_code == "v50pkoyk":
+        tipo_plano = "Mensal"
+    else:
+        tipo_plano = "Vitalício"
+
     if event in ["PURCHASE_APPROVED", "Compra aprovada", "Compra completa"]:
         nova_chave = f"MDPRO-{uuid.uuid4().hex[:8].upper()}"
         
         LICENCAS_DB[nova_chave] = {
             "email": email_comprador,
-            "tipo": "Vitalício",
+            "tipo": tipo_plano,
             "status": "ativa"
         }
         
-        print(f"Nova licença gerada: {nova_chave} para {email_comprador}")
+        print(f"Nova licença gerada [{tipo_plano}]: {nova_chave} para {email_comprador}")
 
-        # Envia o e-mail em SEGUNDO PLANO sem travar a resposta da Hotmart
         if email_comprador:
-            background_tasks.add_task(enviar_email_chave, email_comprador, nova_chave)
+            background_tasks.add_task(enviar_email_chave, email_comprador, nova_chave, tipo_plano)
 
     return {"status": "sucesso"}
