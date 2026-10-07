@@ -46,7 +46,7 @@ def carregar_db_nuvem():
                     "hwid": reg.get("hwid"),
                     "data_criacao": data_criacao
                 }
-            print(f"☁️ Banco carregado da nuvem com sucesso! Total: {len(db)} licença(s).")
+            print(f"☁️ Base de dados carregada da nuvem com sucesso! Total: {len(db)} licença(s).")
             return db
     except Exception as e:
         print(f"❌ Erro ao carregar do Supabase: {e}")
@@ -80,10 +80,10 @@ def salvar_ou_atualizar_nuvem(chave, info):
         print(f"❌ Erro ao salvar no Supabase: {e}")
 
 # =====================================================
-# VERSÃO ATUALIZADA NO SERVIDOR (Igual ao app.py v1.0.5)
+# VERSÃO E LINK DIRETO DO GITHUB RELEASES (v1.0.5)
 # =====================================================
 VERSAO_LATEST = "1.0.5"
-URL_DIRECT_DOWNLOAD = "https://drive.google.com/uc?export=download&id=12FKnuvwMMzLKMWz-CcnRXzsatnoIsL5v"
+URL_DIRECT_DOWNLOAD = "https://github.com/cartolamusic-boop/media-downloader-updates/releases/download/v1.0.5/Media.Downloader.Studio.Pro.exe"
 
 def enviar_email_chave(email_destino: str, chave: str, plano: str = "Ativada"):
     resend_key = os.getenv("RESEND_API_KEY", "").strip()
@@ -157,7 +157,7 @@ def validar_chave(chave: str, hwid: str = None):
                 return {
                     "valido": False,
                     "status_code": "BLOQUEADO_OUTRO_PC",
-                    "motivo": "Esta chave já está ativada em outro computador!"
+                    "motivo": "Esta chave já está ativada noutro computador!"
                 }
 
         tipo = info.get("tipo", "Ativada")
