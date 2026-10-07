@@ -1,25 +1,24 @@
 import os
 import uuid
 import requests
-from fastapi import FastAPI, Request, BackgroundTasks
+from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse
 
 app = FastAPI()
 
-# Banco de dados em memória para as licenças
 LICENCAS_DB = {}
 
-# Lê a chave com segurança do ambiente do Render
-RESEND_API_KEY = os.getenv("RESEND_API_KEY", "")
-
 def enviar_email_chave(email_destino: str, chave: str, plano: str = "Ativada"):
-    if not RESEND_API_KEY:
-        print("⚠️ RESEND_API_KEY não configurada nas variáveis do Render.")
+    # Lê a chave diretamente da variável de ambiente do Render
+    resend_key = os.getenv("RESEND_API_KEY", "").strip()
+
+    if not resend_key:
+        print("❌ ERRO CRÍTICO: RESEND_API_KEY não foi encontrada nas variáveis de ambiente do Render!")
         return
 
     url = "https://api.resend.com/emails"
     headers = {
-        "Authorization": f"Bearer {RESEND_API_KEY}",
+        "Authorization": f"Bearer {resend_key}",
         "Content-Type": "application/json"
     }
     
@@ -40,11 +39,12 @@ def enviar_email_chave(email_destino: str, chave: str, plano: str = "Ativada"):
     }
 
     try:
+        print(f"📧 Tentando enviar e-mail via Resend para {email_destino}...")
         response = requests.post(url, headers=headers, json=payload, timeout=10)
         if response.status_code in [200, 201]:
             print(f"✅ E-mail enviado com sucesso via Resend para {email_destino}!")
         else:
-            print(f"❌ Erro ao enviar e-mail via Resend: {response.text}")
+            print(f"❌ Erro da API do Resend ({response.status_code}): {response.text}")
     except Exception as e:
         print(f"❌ Erro na requisição do Resend: {e}")
 
@@ -61,7 +61,7 @@ def validar_chave(chave: str):
     return {"valido": False, "motivo": "Chave não encontrada ou inválida."}
 
 @app.post("/webhook")
-async def webhook_hotmart(request: Request, background_tasks: BackgroundTasks):
+async def webhook_hotmart(request: Request):
     dados = await request.json()
     
     event = dados.get("event") or dados.get("status")
@@ -80,9 +80,6 @@ async def webhook_hotmart(request: Request, background_tasks: BackgroundTasks):
 
     print(f"📌 Oferta recebida no Webhook: {offer_code}")
 
-    # MAPEAMENTO CORRETO DAS OFERTAS HOTMART:
-    # 12nhtlsk = Mensal (R$ 19,90)
-    # v50pkoyk = Vitalício (R$ 39,90)
     if offer_code == "12nhtlsk":
         tipo_plano = "Mensal"
     elif offer_code == "v50pkoyk":
@@ -102,7 +99,8 @@ async def webhook_hotmart(request: Request, background_tasks: BackgroundTasks):
         print(f"Nova licença gerada [{tipo_plano}]: {nova_chave} para {email_comprador}")
 
         if email_comprador:
-            background_tasks.add_task(enviar_email_chave, email_comprador, nova_chave, tipo_plano)
+            # Envio direto para garantir que os logs apareçam imediatamente
+            enviar_email_chave(email_comprador, nova_chave, tipo_plano)
 
     return {"status": "sucesso"}
 
