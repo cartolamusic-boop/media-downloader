@@ -10,9 +10,8 @@ app = FastAPI()
 # Banco de dados em memória para as licenças
 LICENCAS_DB = {}
 
-def enviar_email_chave(email_destino: str, chave: str, plano: str = "Vitalício"):
+def enviar_email_chave(email_destino: str, chave: str, plano: str = "Ativada"):
     remetente = "cartolamusic@gmail.com"
-    # Sua senha de aplicação de 16 letras do Google
     senha_app = "usjj jbag mbmg hdlc"
 
     mensagem = MIMEMultipart()
@@ -33,14 +32,23 @@ def enviar_email_chave(email_destino: str, chave: str, plano: str = "Vitalício"
     mensagem.attach(MIMEText(corpo, 'plain', 'utf-8'))
 
     try:
-        server = smtplib.SMTP('smtp.gmail.com', 587)
-        server.starttls()
+        # Tenta conexão segura via SSL (porta 465) para evitar instabilidades na porta 587 no Render
+        server = smtplib.SMTP_SSL('smtp.gmail.com', 465, timeout=15)
         server.login(remetente, senha_app)
         server.sendmail(remetente, email_destino, mensagem.as_string())
         server.quit()
         print(f"✅ E-mail enviado com sucesso para {email_destino}!")
     except Exception as e:
-        print(f"❌ Erro ao enviar e-mail: {e}")
+        # Fallback para TLS na porta 587 se a 465 não conectar
+        try:
+            server = smtplib.SMTP('smtp.gmail.com', 587, timeout=15)
+            server.starttls()
+            server.login(remetente, senha_app)
+            server.sendmail(remetente, email_destino, mensagem.as_string())
+            server.quit()
+            print(f"✅ E-mail enviado via fallback para {email_destino}!")
+        except Exception as err:
+            print(f"❌ Erro ao enviar e-mail: {err}")
 
 @app.get("/")
 def home():
@@ -73,11 +81,14 @@ async def webhook_hotmart(request: Request, background_tasks: BackgroundTasks):
     elif "offer" in dados:
         offer_code = dados.get("offer")
 
-    # Define o tipo de plano baseado na oferta da Hotmart
+    # Mapeamento estrito das ofertas
     if offer_code == "v50pkoyk":
         tipo_plano = "Mensal"
-    else:
+    elif offer_code == "12nhtlsk":
         tipo_plano = "Vitalício"
+    else:
+        # Se for uma oferta de teste de R$ 1,00 ou desconhecida
+        tipo_plano = "Mensal" if offer_code and "mensal" in str(offer_code).lower() else "Vitalício"
 
     if event in ["PURCHASE_APPROVED", "Compra aprovada", "Compra completa", "APPROVED"]:
         nova_chave = f"MDPRO-{uuid.uuid4().hex[:8].upper()}"
@@ -91,14 +102,10 @@ async def webhook_hotmart(request: Request, background_tasks: BackgroundTasks):
         print(f"Nova licença gerada [{tipo_plano}]: {nova_chave} para {email_comprador}")
 
         if email_comprador:
-            # Passa os 3 argumentos corretamente sem dar erro
             background_tasks.add_task(enviar_email_chave, email_comprador, nova_chave, tipo_plano)
 
     return {"status": "sucesso"}
 
-# ----------------------------------------------------
-# ROTA /obrigado (RECEBE O CLIENTE E MOSTRA A CHAVE NA TELA)
-# ----------------------------------------------------
 @app.get("/obrigado", response_class=HTMLResponse)
 def pagina_obrigado(email: str = None, transaction: str = None):
     chave_encontrada = None
