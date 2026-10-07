@@ -12,7 +12,7 @@ LICENCAS_DB = {}
 def enviar_email_chave(email_destino, chave):
     remetente = "cartolamusic@gmail.com"
     # COLE AQUI A SUA SENHA DE APLICAÇÃO DE 16 LETRAS DO GOOGLE
-    senha_app = "usjj jbag mbmg hdlc
+    senha_app = "usjj jbag mbmg hdlc"
 "
 
     mensagem = MIMEMultipart()
