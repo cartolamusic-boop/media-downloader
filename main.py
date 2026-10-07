@@ -1,4 +1,5 @@
 import os
+import json
 import uuid
 import requests
 from datetime import datetime, timezone
@@ -7,8 +8,45 @@ from fastapi.responses import HTMLResponse
 
 app = FastAPI()
 
-# Banco de dados em memória para as licenças
-LICENCAS_DB = {}
+# Arquivo para salvar o banco de dados de licenças em disco
+DB_FILE = "licencas_db.json"
+
+def carregar_db():
+    """Lê as licenças salvas no arquivo JSON ao iniciar o servidor."""
+    if os.path.exists(DB_FILE):
+        try:
+            with open(DB_FILE, "r", encoding="utf-8") as f:
+                dados = json.load(f)
+                # Converte strings ISO de data de volta para datetime com timezone
+                for chave, info in dados.items():
+                    if "data_criacao" in info and isinstance(info["data_criacao"], str):
+                        info["data_criacao"] = datetime.fromisoformat(info["data_criacao"])
+                print(f"💾 Base de licenças carregada! Total: {len(dados)} licença(s).")
+                return dados
+        except Exception as e:
+            print(f"⚠️ Erro ao carregar banco local: {e}")
+            return {}
+    return {}
+
+def salvar_db():
+    """Salva o dicionário de licenças no arquivo JSON sempre que houver alteração."""
+    try:
+        dados_para_salvar = {}
+        for chave, info in LICENCAS_DB.items():
+            info_copy = info.copy()
+            # Converte datetime para string ISO para poder salvar no JSON
+            if isinstance(info_copy.get("data_criacao"), datetime):
+                info_copy["data_criacao"] = info_copy["data_criacao"].isoformat()
+            dados_para_salvar[chave] = info_copy
+
+        with open(DB_FILE, "w", encoding="utf-8") as f:
+            json.dump(dados_para_salvar, f, ensure_ascii=False, indent=2)
+        print("✅ Licenças salvas em arquivo local com sucesso!")
+    except Exception as e:
+        print(f"❌ Erro ao salvar banco local: {e}")
+
+# Inicializa a base de dados com o que já estiver salvo em disco
+LICENCAS_DB = carregar_db()
 
 def enviar_email_chave(email_destino: str, chave: str, plano: str = "Ativada"):
     resend_key = os.getenv("RESEND_API_KEY", "").strip()
@@ -51,7 +89,7 @@ def enviar_email_chave(email_destino: str, chave: str, plano: str = "Ativada"):
 
 @app.get("/")
 def home():
-    return {"status": "Servidor de Licenças Online"}
+    return {"status": "Servidor de Licenças Online", "total_licencas": len(LICENCAS_DB)}
 
 # ----------------------------------------------------
 # ROTA DE VALIDAÇÃO (HWID + STATUS + DIAS MENSAL)
@@ -75,8 +113,9 @@ def validar_chave(chave: str, hwid: str = None):
         if hwid:
             hwid_registrado = info.get("hwid")
             if hwid_registrado is None:
-                # Primeiro PC a ativar esta chave -> Registra o ID
+                # Primeiro PC a ativar esta chave -> Registra o ID e salva no arquivo
                 info["hwid"] = hwid
+                salvar_db()
             elif hwid_registrado != hwid:
                 # Tentativa de uso em outro PC
                 return {
@@ -97,6 +136,7 @@ def validar_chave(chave: str, hwid: str = None):
                 
                 if dias_restantes <= 0:
                     info["status"] = "expirada"
+                    salvar_db()
                     return {
                         "valido": False,
                         "status_code": "EXPIRADO",
@@ -161,9 +201,12 @@ async def webhook_hotmart(request: Request):
             "email": email_comprador,
             "tipo": tipo_plano,
             "status": "ativa",
-            "hwid": None,  # Será registrado no primeiro uso
+            "hwid": None,
             "data_criacao": datetime.now(timezone.utc)
         }
+        
+        # Salva imediatamente no arquivo de disco
+        salvar_db()
         
         print(f"✅ Nova licença gerada [{tipo_plano}]: {nova_chave} para {email_comprador}")
 
@@ -178,6 +221,10 @@ async def webhook_hotmart(request: Request):
                 if info.get("email") == email_comprador:
                     info["status"] = "cancelada"
                     chaves_bloqueadas += 1
+            
+            if chaves_bloqueadas > 0:
+                salvar_db()
+                
             print(f"🚫 Reembolso efetuado: {chaves_bloqueadas} chave(s) bloqueada(s) para {email_comprador}")
 
     return {"status": "sucesso"}
