@@ -60,7 +60,7 @@ def salvar_ou_atualizar_nuvem(chave, info):
     try:
         url = f"{SUPABASE_URL}/rest/v1/licencas"
         headers = get_supabase_headers()
-        headers["Prefer"] = "resolution=merge-duplicates" # Faz UPSERT (insere ou atualiza se já existir)
+        headers["Prefer"] = "resolution=merge-duplicates"
 
         data_criacao = info.get("data_criacao")
         if isinstance(data_criacao, datetime):
@@ -79,8 +79,10 @@ def salvar_ou_atualizar_nuvem(chave, info):
     except Exception as e:
         print(f"❌ Erro ao salvar no Supabase: {e}")
 
-# Versão e link para atualizações automáticas
-VERSAO_LATEST = "1.0.1"
+# =====================================================
+# VERSÃO ATUALIZADA NO SERVIDOR (Igual ao app.py v1.0.5)
+# =====================================================
+VERSAO_LATEST = "1.0.5"
 URL_DIRECT_DOWNLOAD = "https://drive.google.com/uc?export=download&id=12FKnuvwMMzLKMWz-CcnRXzsatnoIsL5v"
 
 def enviar_email_chave(email_destino: str, chave: str, plano: str = "Ativada"):
@@ -119,7 +121,7 @@ def enviar_email_chave(email_destino: str, chave: str, plano: str = "Ativada"):
 @app.get("/")
 def home():
     db_atual = carregar_db_nuvem()
-    return {"status": "Servidor de Licenças Online (Nuven Supabase)", "total_licencas": len(db_atual), "versao_atual": VERSAO_LATEST}
+    return {"status": "Servidor de Licenças Online (Supabase)", "total_licencas": len(db_atual), "versao_atual": VERSAO_LATEST}
 
 @app.get("/checar_atualizacao")
 def checar_atualizacao(versao_cliente: str = "1.0.0"):
