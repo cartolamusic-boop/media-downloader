@@ -3,15 +3,16 @@ import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from fastapi import FastAPI, Request, BackgroundTasks
+from fastapi.responses import HTMLResponse
 
 app = FastAPI()
 
 # Banco de dados em memória para as licenças
 LICENCAS_DB = {}
 
-def enviar_email_chave(email_destino, chave):
+def enviar_email_chave(email_destino: str, chave: str, plano: str = "Vitalício"):
     remetente = "cartolamusic@gmail.com"
-    # COLE AQUI A SUA SENHA DE APLICAÇÃO DE 16 LETRAS DO GOOGLE
+    # Sua senha de aplicação de 16 letras do Google
     senha_app = "usjj jbag mbmg hdlc"
 
     mensagem = MIMEMultipart()
@@ -29,7 +30,7 @@ def enviar_email_chave(email_destino, chave):
 
     Cole esta chave no programa e clique em 'Ativar Chave'.
     """
-    mensagem.attach(MIMEText(corpo, 'plain'))
+    mensagem.attach(MIMEText(corpo, 'plain', 'utf-8'))
 
     try:
         server = smtplib.SMTP('smtp.gmail.com', 587)
@@ -37,9 +38,9 @@ def enviar_email_chave(email_destino, chave):
         server.login(remetente, senha_app)
         server.sendmail(remetente, email_destino, mensagem.as_string())
         server.quit()
-        print(f"E-mail enviado com sucesso para {email_destino}!")
+        print(f"✅ E-mail enviado com sucesso para {email_destino}!")
     except Exception as e:
-        print(f"Erro ao enviar e-mail: {e}")
+        print(f"❌ Erro ao enviar e-mail: {e}")
 
 @app.get("/")
 def home():
@@ -78,7 +79,7 @@ async def webhook_hotmart(request: Request, background_tasks: BackgroundTasks):
     else:
         tipo_plano = "Vitalício"
 
-    if event in ["PURCHASE_APPROVED", "Compra aprovada", "Compra completa"]:
+    if event in ["PURCHASE_APPROVED", "Compra aprovada", "Compra completa", "APPROVED"]:
         nova_chave = f"MDPRO-{uuid.uuid4().hex[:8].upper()}"
         
         LICENCAS_DB[nova_chave] = {
@@ -90,6 +91,45 @@ async def webhook_hotmart(request: Request, background_tasks: BackgroundTasks):
         print(f"Nova licença gerada [{tipo_plano}]: {nova_chave} para {email_comprador}")
 
         if email_comprador:
+            # Passa os 3 argumentos corretamente sem dar erro
             background_tasks.add_task(enviar_email_chave, email_comprador, nova_chave, tipo_plano)
 
     return {"status": "sucesso"}
+
+# ----------------------------------------------------
+# ROTA /obrigado (RECEBE O CLIENTE E MOSTRA A CHAVE NA TELA)
+# ----------------------------------------------------
+@app.get("/obrigado", response_class=HTMLResponse)
+def pagina_obrigado(email: str = None, transaction: str = None):
+    chave_encontrada = None
+    
+    if email:
+        for chave, info in LICENCAS_DB.items():
+            if info.get("email") == email.strip():
+                chave_encontrada = chave
+
+    html_content = f"""
+    <!DOCTYPE html>
+    <html lang="pt-BR">
+    <head>
+        <meta charset="UTF-8">
+        <title>Sua Licença - Media Downloader Studio Pro</title>
+        <style>
+            body {{ font-family: Arial, sans-serif; background-color: #0F172A; color: #F8FAFC; text-align: center; padding: 50px 20px; }}
+            .card {{ background-color: #1E293B; border-radius: 12px; padding: 30px; max-width: 500px; margin: 0 auto; box-shadow: 0 4px 20px rgba(0,0,0,0.5); }}
+            h1 {{ color: #10B981; margin-bottom: 10px; }}
+            .chave {{ font-size: 24px; font-weight: bold; background: #334155; padding: 15px; border-radius: 8px; color: #38BDF8; letter-spacing: 2px; margin: 25px 0; word-break: break-all; }}
+            p {{ color: #94A3B8; line-height: 1.6; }}
+        </style>
+    </head>
+    <body>
+        <div class="card">
+            <h1>🎉 Compra Aprovada!</h1>
+            <p>Sua chave de licença do <strong>Media Downloader Studio Pro</strong>:</p>
+            <div class="chave">{chave_encontrada if chave_encontrada else 'Enviada para o seu e-mail!'}</div>
+            <p>Abra o aplicativo, cole o código acima no campo de ativação e clique em <strong>"Ativar Chave"</strong>.</p>
+        </div>
+    </body>
+    </html>
+    """
+    return HTMLResponse(content=html_content, status_code=200)
