@@ -1,6 +1,7 @@
 import os
 import uuid
 import requests
+from datetime import datetime, timezone, timedelta
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse
 
@@ -52,18 +53,64 @@ def enviar_email_chave(email_destino: str, chave: str, plano: str = "Ativada"):
 def home():
     return {"status": "Servidor de Licenças Online"}
 
+# ----------------------------------------------------
+# ROTA DE VALIDAÇÃO COM CONTAGEM REGRESSIVA E BLOQUEIO
+# ----------------------------------------------------
 @app.get("/validar")
 def validar_chave(chave: str):
     chave = chave.strip()
     if chave in LICENCAS_DB:
         info = LICENCAS_DB[chave]
-        if info.get("status") != "ativa":
-            return {"valido": False, "motivo": "Esta licença foi cancelada ou reembolsada."}
-            
-        return {"valido": True, "tipo": info.get("tipo", "Ativada")}
         
-    return {"valido": False, "motivo": "Chave não encontrada ou inválida."}
+        # Bloqueia caso tenha sido cancelada ou reembolsada
+        if info.get("status") != "ativa":
+            return {
+                "valido": False,
+                "status_code": "BLOQUEADO",
+                "motivo": "Licença Bloqueada / Cancelada"
+            }
 
+        tipo = info.get("tipo", "Ativada")
+        
+        # Lógica de contagem regressiva para plano Mensal (30 dias)
+        if tipo == "Mensal":
+            data_criacao = info.get("data_criacao")
+            if data_criacao:
+                hoje = datetime.now(timezone.utc)
+                dias_passados = (hoje - data_criacao).days
+                dias_restantes = max(0, 30 - dias_passados)
+                
+                if dias_restantes <= 0:
+                    info["status"] = "expirada"
+                    return {
+                        "valido": False,
+                        "status_code": "EXPIRADO",
+                        "motivo": "Licença Mensal Expirada"
+                    }
+                
+                return {
+                    "valido": True,
+                    "tipo": "Mensal",
+                    "dias_restantes": dias_restantes,
+                    "mensagem": f"Licença Mensal Ativa ({dias_restantes} dias restantes)"
+                }
+
+        return {
+            "valido": True,
+            "tipo": tipo,
+            "dias_restantes": None,
+            "mensagem": f"Licença {tipo} Ativa"
+        }
+        
+    return {
+        "valido": False,
+        "status_code": "INVALIDO",
+        "motivo": "Chave não encontrada ou inválida."
+    }
+
+# ----------------------------------------------------
+# WEBHOOK HOTMART
+# ----------------------------------------------------
 @app.post("/webhook")
 async def webhook_hotmart(request: Request):
     dados = await request.json()
@@ -84,6 +131,7 @@ async def webhook_hotmart(request: Request):
 
     print(f"📌 Evento: {event} | Oferta: {offer_code} | E-mail: {email_comprador}")
 
+    # 1. COMPRA APROVADA
     if event in ["PURCHASE_APPROVED", "Compra aprovada", "Compra completa", "APPROVED"]:
         if offer_code == "12nhtlsk":
             tipo_plano = "Mensal"
@@ -97,7 +145,8 @@ async def webhook_hotmart(request: Request):
         LICENCAS_DB[nova_chave] = {
             "email": email_comprador,
             "tipo": tipo_plano,
-            "status": "ativa"
+            "status": "ativa",
+            "data_criacao": datetime.now(timezone.utc)
         }
         
         print(f"✅ Nova licença gerada [{tipo_plano}]: {nova_chave} para {email_comprador}")
@@ -105,6 +154,7 @@ async def webhook_hotmart(request: Request):
         if email_comprador:
             enviar_email_chave(email_comprador, nova_chave, tipo_plano)
 
+    # 2. REEMBOLSO OU CANCELAMENTO
     elif event in ["PURCHASE_REFUNDED", "PURCHASE_CANCELED", "PURCHASE_CHARGEBACK", "REFUNDED", "CANCELED"]:
         if email_comprador:
             chaves_bloqueadas = 0
