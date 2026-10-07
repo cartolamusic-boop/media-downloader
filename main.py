@@ -1,5 +1,4 @@
 import os
-import json
 import uuid
 import requests
 from datetime import datetime, timezone
@@ -8,55 +7,86 @@ from fastapi.responses import HTMLResponse
 
 app = FastAPI()
 
-# ----------------------------------------------------
-# CONFIGURAÇÃO DE VERSÃO E ATUALIZAÇÕES DOS PATCHES
-# ----------------------------------------------------
+# Credenciais do Supabase obtidas nas Variáveis de Ambiente do Render
+SUPABASE_URL = os.getenv("SUPABASE_URL", "").strip()
+SUPABASE_KEY = os.getenv("SUPABASE_KEY", "").strip()
+
+def get_supabase_headers():
+    return {
+        "apikey": SUPABASE_KEY,
+        "Authorization": f"Bearer {SUPABASE_KEY}",
+        "Content-Type": "application/json"
+    }
+
+def carregar_db_nuvem():
+    """Busca todas as licenças diretamente do banco gratuito no Supabase."""
+    if not SUPABASE_URL or not SUPABASE_KEY:
+        print("⚠️ SUPABASE_URL ou SUPABASE_KEY não configurados!")
+        return {}
+    
+    try:
+        url = f"{SUPABASE_URL}/rest/v1/licencas?select=*"
+        resp = requests.get(url, headers=get_supabase_headers(), timeout=10)
+        if resp.status_code == 200:
+            registros = resp.json()
+            db = {}
+            for reg in registros:
+                chave = reg.get("chave")
+                data_criacao = reg.get("data_criacao")
+                if data_criacao:
+                    try:
+                        data_criacao = datetime.fromisoformat(data_criacao)
+                    except Exception:
+                        pass
+                
+                db[chave] = {
+                    "email": reg.get("email"),
+                    "tipo": reg.get("tipo"),
+                    "status": reg.get("status"),
+                    "hwid": reg.get("hwid"),
+                    "data_criacao": data_criacao
+                }
+            print(f"☁️ Banco carregado da nuvem com sucesso! Total: {len(db)} licença(s).")
+            return db
+    except Exception as e:
+        print(f"❌ Erro ao carregar do Supabase: {e}")
+    return {}
+
+def salvar_ou_atualizar_nuvem(chave, info):
+    """Salva ou atualiza uma licença instantaneamente no Supabase."""
+    if not SUPABASE_URL or not SUPABASE_KEY:
+        return
+
+    try:
+        url = f"{SUPABASE_URL}/rest/v1/licencas"
+        headers = get_supabase_headers()
+        headers["Prefer"] = "resolution=merge-duplicates" # Faz UPSERT (insere ou atualiza se já existir)
+
+        data_criacao = info.get("data_criacao")
+        if isinstance(data_criacao, datetime):
+            data_criacao = data_criacao.isoformat()
+
+        payload = {
+            "chave": chave,
+            "email": info.get("email"),
+            "tipo": info.get("tipo"),
+            "status": info.get("status"),
+            "hwid": info.get("hwid"),
+            "data_criacao": data_criacao
+        }
+
+        requests.post(url, headers=headers, json=payload, timeout=10)
+    except Exception as e:
+        print(f"❌ Erro ao salvar no Supabase: {e}")
+
+# Versão e link para atualizações automáticas
 VERSAO_LATEST = "1.0.1"
 URL_DIRECT_DOWNLOAD = "https://drive.google.com/uc?export=download&id=12FKnuvwMMzLKMWz-CcnRXzsatnoIsL5v"
 
-# Arquivo para salvar o banco de dados de licenças em disco
-DB_FILE = "licencas_db.json"
-
-def carregar_db():
-    """Lê as licenças salvas no arquivo JSON ao iniciar o servidor."""
-    if os.path.exists(DB_FILE):
-        try:
-            with open(DB_FILE, "r", encoding="utf-8") as f:
-                dados = json.load(f)
-                for chave, info in dados.items():
-                    if "data_criacao" in info and isinstance(info["data_criacao"], str):
-                        info["data_criacao"] = datetime.fromisoformat(info["data_criacao"])
-                print(f"💾 Base de licenças carregada! Total: {len(dados)} licença(s).")
-                return dados
-        except Exception as e:
-            print(f"⚠️ Erro ao carregar banco local: {e}")
-            return {}
-    return {}
-
-def salvar_db():
-    """Salva o dicionário de licenças no arquivo JSON sempre que houver alteração."""
-    try:
-        dados_para_salvar = {}
-        for chave, info in LICENCAS_DB.items():
-            info_copy = info.copy()
-            if isinstance(info_copy.get("data_criacao"), datetime):
-                info_copy["data_criacao"] = info_copy["data_criacao"].isoformat()
-            dados_para_salvar[chave] = info_copy
-
-        with open(DB_FILE, "w", encoding="utf-8") as f:
-            json.dump(dados_para_salvar, f, ensure_ascii=False, indent=2)
-        print("✅ Licenças salvas em arquivo local com sucesso!")
-    except Exception as e:
-        print(f"❌ Erro ao salvar banco local: {e}")
-
-# Inicializa a base de dados com o que já estiver salvo em disco
-LICENCAS_DB = carregar_db()
-
 def enviar_email_chave(email_destino: str, chave: str, plano: str = "Ativada"):
     resend_key = os.getenv("RESEND_API_KEY", "").strip()
-
     if not resend_key:
-        print("❌ ERRO CRÍTICO: RESEND_API_KEY não encontrada nas variáveis do Render!")
+        print("❌ RESEND_API_KEY não encontrada!")
         return
 
     url = "https://api.resend.com/emails"
@@ -82,22 +112,15 @@ def enviar_email_chave(email_destino: str, chave: str, plano: str = "Ativada"):
     }
 
     try:
-        print(f"📧 Enviando e-mail via Resend para {email_destino}...")
-        response = requests.post(url, headers=headers, json=payload, timeout=10)
-        if response.status_code in [200, 201]:
-            print(f"✅ E-mail entregue com sucesso para {email_destino}!")
-        else:
-            print(f"❌ Erro da API Resend ({response.status_code}): {response.text}")
+        requests.post(url, headers=headers, json=payload, timeout=10)
     except Exception as e:
-        print(f"❌ Erro na requisição do Resend: {e}")
+        print(f"❌ Erro no Resend: {e}")
 
 @app.get("/")
 def home():
-    return {"status": "Servidor de Licenças Online", "total_licencas": len(LICENCAS_DB), "versao_atual": VERSAO_LATEST}
+    db_atual = carregar_db_nuvem()
+    return {"status": "Servidor de Licenças Online (Nuven Supabase)", "total_licencas": len(db_atual), "versao_atual": VERSAO_LATEST}
 
-# ----------------------------------------------------
-# ROTA DE ATUALIZAÇÃO DO APLICATIVO (PATCHES AUTO)
-# ----------------------------------------------------
 @app.get("/checar_atualizacao")
 def checar_atualizacao(versao_cliente: str = "1.0.0"):
     if versao_cliente != VERSAO_LATEST:
@@ -108,15 +131,13 @@ def checar_atualizacao(versao_cliente: str = "1.0.0"):
         }
     return {"tem_atualizacao": False}
 
-# ----------------------------------------------------
-# ROTA DE VALIDAÇÃO (HWID + STATUS + DIAS MENSAL)
-# ----------------------------------------------------
 @app.get("/validar")
 def validar_chave(chave: str, hwid: str = None):
     chave = chave.strip()
+    db = carregar_db_nuvem()
     
-    if chave in LICENCAS_DB:
-        info = LICENCAS_DB[chave]
+    if chave in db:
+        info = db[chave]
         
         if info.get("status") != "ativa":
             return {
@@ -129,7 +150,7 @@ def validar_chave(chave: str, hwid: str = None):
             hwid_registrado = info.get("hwid")
             if hwid_registrado is None:
                 info["hwid"] = hwid
-                salvar_db()
+                salvar_ou_atualizar_nuvem(chave, info)
             elif hwid_registrado != hwid:
                 return {
                     "valido": False,
@@ -143,12 +164,14 @@ def validar_chave(chave: str, hwid: str = None):
             data_criacao = info.get("data_criacao")
             if data_criacao:
                 hoje = datetime.now(timezone.utc)
+                if isinstance(data_criacao, str):
+                    data_criacao = datetime.fromisoformat(data_criacao)
                 dias_passados = (hoje - data_criacao).days
                 dias_restantes = max(0, 30 - dias_passados)
                 
                 if dias_restantes <= 0:
                     info["status"] = "expirada"
-                    salvar_db()
+                    salvar_ou_atualizar_nuvem(chave, info)
                     return {
                         "valido": False,
                         "status_code": "EXPIRADO",
@@ -175,13 +198,9 @@ def validar_chave(chave: str, hwid: str = None):
         "motivo": "Chave não encontrada ou inválida."
     }
 
-# ----------------------------------------------------
-# WEBHOOK HOTMART
-# ----------------------------------------------------
 @app.post("/webhook")
 async def webhook_hotmart(request: Request):
     dados = await request.json()
-    
     event = dados.get("event") or dados.get("status")
     
     email_comprador = None
@@ -208,7 +227,7 @@ async def webhook_hotmart(request: Request):
 
         nova_chave = f"MDPRO-{uuid.uuid4().hex[:8].upper()}"
         
-        LICENCAS_DB[nova_chave] = {
+        info_nova = {
             "email": email_comprador,
             "tipo": tipo_plano,
             "status": "ativa",
@@ -216,58 +235,19 @@ async def webhook_hotmart(request: Request):
             "data_criacao": datetime.now(timezone.utc)
         }
         
-        salvar_db()
-        print(f"✅ Nova licença gerada [{tipo_plano}]: {nova_chave} para {email_comprador}")
+        salvar_ou_atualizar_nuvem(nova_chave, info_nova)
+        print(f"✅ Nova licença gerada e salva na nuvem [{tipo_plano}]: {nova_chave} para {email_comprador}")
 
         if email_comprador:
             enviar_email_chave(email_comprador, nova_chave, tipo_plano)
 
     elif event in ["PURCHASE_REFUNDED", "PURCHASE_CANCELED", "PURCHASE_CHARGEBACK", "REFUNDED", "CANCELED"]:
         if email_comprador:
-            chaves_bloqueadas = 0
-            for chave, info in LICENCAS_DB.items():
+            db = carregar_db_nuvem()
+            for chave, info in db.items():
                 if info.get("email") == email_comprador:
                     info["status"] = "cancelada"
-                    chaves_bloqueadas += 1
-            
-            if chaves_bloqueadas > 0:
-                salvar_db()
-                
-            print(f"🚫 Reembolso efetuado: {chaves_bloqueadas} chave(s) bloqueada(s) para {email_comprador}")
+                    salvar_ou_atualizar_nuvem(chave, info)
+            print(f"🚫 Reembolso efetuado: chaves bloqueadas para {email_comprador}")
 
     return {"status": "sucesso"}
-
-@app.get("/obrigado", response_class=HTMLResponse)
-def pagina_obrigado(email: str = None, transaction: str = None):
-    chave_encontrada = None
-    
-    if email:
-        for chave, info in LICENCAS_DB.items():
-            if info.get("email") == email.strip() and info.get("status") == "ativa":
-                chave_encontrada = chave
-
-    html_content = f"""
-    <!DOCTYPE html>
-    <html lang="pt-BR">
-    <head>
-        <meta charset="UTF-8">
-        <title>Sua Licença - Media Downloader Studio Pro</title>
-        <style>
-            body {{ font-family: Arial, sans-serif; background-color: #0F172A; color: #F8FAFC; text-align: center; padding: 50px 20px; }}
-            .card {{ background-color: #1E293B; border-radius: 12px; padding: 30px; max-width: 500px; margin: 0 auto; box-shadow: 0 4px 20px rgba(0,0,0,0.5); }}
-            h1 {{ color: #10B981; margin-bottom: 10px; }}
-            .chave {{ font-size: 24px; font-weight: bold; background: #334155; padding: 15px; border-radius: 8px; color: #38BDF8; letter-spacing: 2px; margin: 25px 0; word-break: break-all; }}
-            p {{ color: #94A3B8; line-height: 1.6; }}
-        </style>
-    </head>
-    <body>
-        <div class="card">
-            <h1>🎉 Compra Aprovada!</h1>
-            <p>Sua chave de licença do <strong>Media Downloader Studio Pro</strong>:</p>
-            <div class="chave">{chave_encontrada if chave_encontrada else 'Enviada para o seu e-mail!'}</div>
-            <p>Abra o aplicativo, cole o código acima no campo de ativação e clique em <strong>"Ativar Chave"</strong>.</p>
-        </div>
-    </body>
-    </html>
-    """
-    return HTMLResponse(content=html_content, status_code=200)
