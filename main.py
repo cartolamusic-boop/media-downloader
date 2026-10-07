@@ -1,3 +1,4 @@
+import os
 import uuid
 import requests
 from fastapi import FastAPI, Request, BackgroundTasks
@@ -5,14 +6,15 @@ from fastapi.responses import HTMLResponse
 
 app = FastAPI()
 
+# Banco de dados em memória para as licenças
 LICENCAS_DB = {}
 
-# Cole aqui a sua API Key do Resend (começa com re_...)
-RESEND_API_KEY = "re_HBvC9YRH_HkxX76FbjHWJP2G9MWuYgp5H"
+# Lê a chave com segurança do ambiente do Render
+RESEND_API_KEY = os.getenv("RESEND_API_KEY", "")
 
 def enviar_email_chave(email_destino: str, chave: str, plano: str = "Ativada"):
-    if not RESEND_API_KEY or "SUA_CHAVE_AQUI" in RESEND_API_KEY:
-        print("⚠️ RESEND_API_KEY não configurada.")
+    if not RESEND_API_KEY:
+        print("⚠️ RESEND_API_KEY não configurada nas variáveis do Render.")
         return
 
     url = "https://api.resend.com/emails"
@@ -78,6 +80,9 @@ async def webhook_hotmart(request: Request, background_tasks: BackgroundTasks):
 
     print(f"📌 Oferta recebida no Webhook: {offer_code}")
 
+    # MAPEAMENTO CORRETO DAS OFERTAS HOTMART:
+    # 12nhtlsk = Mensal (R$ 19,90)
+    # v50pkoyk = Vitalício (R$ 39,90)
     if offer_code == "12nhtlsk":
         tipo_plano = "Mensal"
     elif offer_code == "v50pkoyk":
