@@ -2,7 +2,7 @@ import uuid
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, BackgroundTasks
 
 app = FastAPI()
 
@@ -32,7 +32,6 @@ def enviar_email_chave(email_destino, chave):
     mensagem.attach(MIMEText(corpo, 'plain'))
 
     try:
-        # Porta 587 + STARTTLS (Funciona gratuitamente no Render)
         server = smtplib.SMTP('smtp.gmail.com', 587)
         server.starttls()
         server.login(remetente, senha_app)
@@ -55,7 +54,7 @@ def validar_chave(chave: str):
     return {"valido": False, "motivo": "Chave não encontrada ou inválida."}
 
 @app.post("/webhook")
-async def webhook_hotmart(request: Request):
+async def webhook_hotmart(request: Request, background_tasks: BackgroundTasks):
     dados = await request.json()
     
     event = dados.get("event") or dados.get("status")
@@ -77,7 +76,8 @@ async def webhook_hotmart(request: Request):
         
         print(f"Nova licença gerada: {nova_chave} para {email_comprador}")
 
+        # Envia o e-mail em SEGUNDO PLANO sem travar a resposta da Hotmart
         if email_comprador:
-            enviar_email_chave(email_comprador, nova_chave)
+            background_tasks.add_task(enviar_email_chave, email_comprador, nova_chave)
 
     return {"status": "sucesso"}
