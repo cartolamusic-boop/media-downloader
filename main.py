@@ -31,24 +31,27 @@ def enviar_email_chave(email_destino: str, chave: str, plano: str = "Ativada"):
     """
     mensagem.attach(MIMEText(corpo, 'plain', 'utf-8'))
 
+    # Tenta primeiro via SSL (Porta 465 - Mais estável em servidores cloud)
     try:
-        # Tenta conexão segura via SSL (porta 465) para evitar instabilidades na porta 587 no Render
-        server = smtplib.SMTP_SSL('smtp.gmail.com', 465, timeout=15)
+        server = smtplib.SMTP_SSL('smtp.gmail.com', 465, timeout=12)
         server.login(remetente, senha_app)
         server.sendmail(remetente, email_destino, mensagem.as_string())
         server.quit()
-        print(f"✅ E-mail enviado com sucesso para {email_destino}!")
+        print(f"✅ E-mail enviado com sucesso via SSL (465) para {email_destino}!")
+        return
     except Exception as e:
-        # Fallback para TLS na porta 587 se a 465 não conectar
-        try:
-            server = smtplib.SMTP('smtp.gmail.com', 587, timeout=15)
-            server.starttls()
-            server.login(remetente, senha_app)
-            server.sendmail(remetente, email_destino, mensagem.as_string())
-            server.quit()
-            print(f"✅ E-mail enviado via fallback para {email_destino}!")
-        except Exception as err:
-            print(f"❌ Erro ao enviar e-mail: {err}")
+        print(f"⚠️ Tentativa via 465 falhou: {e}. Tentando porta 587...")
+
+    # Fallback via TLS (Porta 587)
+    try:
+        server = smtplib.SMTP('smtp.gmail.com', 587, timeout=12)
+        server.starttls()
+        server.login(remetente, senha_app)
+        server.sendmail(remetente, email_destino, mensagem.as_string())
+        server.quit()
+        print(f"✅ E-mail enviado com sucesso via TLS (587) para {email_destino}!")
+    except Exception as e:
+        print(f"❌ Erro final ao enviar e-mail: {e}")
 
 @app.get("/")
 def home():
@@ -81,14 +84,13 @@ async def webhook_hotmart(request: Request, background_tasks: BackgroundTasks):
     elif "offer" in dados:
         offer_code = dados.get("offer")
 
-    # Mapeamento estrito das ofertas
-    if offer_code == "v50pkoyk":
+    print(f"📌 Oferta recebida no Webhook: {offer_code}")
+
+    # Se for a oferta v50pkoyk OU se o código for diferente das ofertas padrão (ex: oferta de teste com cupom)
+    if offer_code == "v50pkoyk" or offer_code != "12nhtlsk":
         tipo_plano = "Mensal"
-    elif offer_code == "12nhtlsk":
-        tipo_plano = "Vitalício"
     else:
-        # Se for uma oferta de teste de R$ 1,00 ou desconhecida
-        tipo_plano = "Mensal" if offer_code and "mensal" in str(offer_code).lower() else "Vitalício"
+        tipo_plano = "Vitalício"
 
     if event in ["PURCHASE_APPROVED", "Compra aprovada", "Compra completa", "APPROVED"]:
         nova_chave = f"MDPRO-{uuid.uuid4().hex[:8].upper()}"
