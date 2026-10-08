@@ -11,6 +11,10 @@ app = FastAPI()
 SUPABASE_URL = os.getenv("SUPABASE_URL", "").strip()
 SUPABASE_KEY = os.getenv("SUPABASE_KEY", "").strip()
 
+# Repositório do GitHub Releases
+GITHUB_REPO = "cartolamusic-boop/media-downloader-updates"
+URL_DIRECT_DOWNLOAD = f"https://github.com/{GITHUB_REPO}/releases/latest/download/Instalador_MediaDownloader_Setup.exe"
+
 def get_supabase_headers():
     return {
         "apikey": SUPABASE_KEY,
@@ -18,8 +22,26 @@ def get_supabase_headers():
         "Content-Type": "application/json"
     }
 
+def obter_ultima_versao_github():
+    """Consulta a API do GitHub para pegar dinamicamente a versão (tag) mais recente publicada."""
+    try:
+        url_github_api = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
+        headers = {"User-Agent": "MediaDownloader-Server"}
+        resp = requests.get(url_github_api, headers=headers, timeout=5)
+        if resp.status_code == 200:
+            dados = resp.json()
+            tag_name = dados.get("tag_name", "").strip()
+            # Remove o 'v' do início da tag caso você use 'v1.1.8' no GitHub
+            versao_limpa = tag_name.lstrip("v")
+            if versao_limpa:
+                return versao_limpa
+    except Exception as e:
+        print(f"⚠️ Erro ao buscar versão no GitHub API: {e}")
+    
+    # Versão de backup caso a API do GitHub falhe
+    return "1.1.7"
+
 def carregar_db_nuvem():
-    """Busca todas as licenças diretamente do banco gratuito no Supabase."""
     if not SUPABASE_URL or not SUPABASE_KEY:
         print("⚠️ SUPABASE_URL ou SUPABASE_KEY não configurados!")
         return {}
@@ -46,14 +68,12 @@ def carregar_db_nuvem():
                     "hwid": reg.get("hwid"),
                     "data_criacao": data_criacao
                 }
-            print(f"☁️ Base de dados carregada da nuvem com sucesso! Total: {len(db)} licença(s).")
             return db
     except Exception as e:
         print(f"❌ Erro ao carregar do Supabase: {e}")
     return {}
 
 def salvar_ou_atualizar_nuvem(chave, info):
-    """Salva ou atualiza uma licença instantaneamente no Supabase."""
     if not SUPABASE_URL or not SUPABASE_KEY:
         return
 
@@ -78,12 +98,6 @@ def salvar_ou_atualizar_nuvem(chave, info):
         requests.post(url, headers=headers, json=payload, timeout=10)
     except Exception as e:
         print(f"❌ Erro ao salvar no Supabase: {e}")
-
-# =====================================================
-# VERSÃO E LINK DIRETO DO GITHUB RELEASES (CORRIGIDO)
-# =====================================================
-VERSAO_LATEST = "1.1.7"
-URL_DIRECT_DOWNLOAD = "https://github.com/cartolamusic-boop/media-downloader-updates/releases/latest/download/Instalador_MediaDownloader_Setup.exe"
 
 def enviar_email_chave(email_destino: str, chave: str, plano: str = "Ativada"):
     resend_key = os.getenv("RESEND_API_KEY", "").strip()
@@ -121,14 +135,22 @@ def enviar_email_chave(email_destino: str, chave: str, plano: str = "Ativada"):
 @app.get("/")
 def home():
     db_atual = carregar_db_nuvem()
-    return {"status": "Servidor de Licenças Online (Supabase)", "total_licencas": len(db_atual), "versao_atual": VERSAO_LATEST}
+    versao_atual = obter_ultima_versao_github()
+    return {
+        "status": "Servidor de Licenças Online (Supabase)", 
+        "total_licencas": len(db_atual), 
+        "versao_atual": versao_atual
+    }
 
 @app.get("/checar_atualizacao")
 def checar_atualizacao(versao_cliente: str = "1.0.0"):
-    if versao_cliente != VERSAO_LATEST:
+    versao_latest = obter_ultima_versao_github()
+    
+    # Compara a versão enviada pelo app com a versão mais recente cadastrada no GitHub
+    if versao_cliente != versao_latest:
         return {
             "tem_atualizacao": True,
-            "versao": VERSAO_LATEST,
+            "versao": versao_latest,
             "url": URL_DIRECT_DOWNLOAD
         }
     return {"tem_atualizacao": False}
@@ -238,7 +260,6 @@ async def webhook_hotmart(request: Request):
         }
         
         salvar_ou_atualizar_nuvem(nova_chave, info_nova)
-        print(f"✅ Nova licença gerada e salva na nuvem [{tipo_plano}]: {nova_chave} para {email_comprador}")
 
         if email_comprador:
             enviar_email_chave(email_comprador, nova_chave, tipo_plano)
@@ -250,6 +271,5 @@ async def webhook_hotmart(request: Request):
                 if info.get("email") == email_comprador:
                     info["status"] = "cancelada"
                     salvar_ou_atualizar_nuvem(chave, info)
-            print(f"🚫 Reembolso efetuado: chaves bloqueadas para {email_comprador}")
 
     return {"status": "sucesso"}
