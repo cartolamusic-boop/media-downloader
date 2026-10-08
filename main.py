@@ -80,7 +80,7 @@ def salvar_ou_atualizar_nuvem(chave, info):
         print(f"❌ Erro ao salvar no Supabase: {e}")
 
 # =====================================================
-# VERSÃO E LINK DIRETO DO GITHUB RELEASES (v1.0.5)
+# VERSÃO E LINK DIRETO DO GITHUB RELEASES
 # =====================================================
 VERSAO_LATEST = "1.0.5"
 URL_DIRECT_DOWNLOAD = "https://github.com/cartolamusic-boop/media-downloader-updates/releases/download/v1.0.5/Media.Downloader.Studio.Pro.exe"
