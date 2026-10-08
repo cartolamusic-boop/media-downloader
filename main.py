@@ -82,7 +82,7 @@ def salvar_ou_atualizar_nuvem(chave, info):
 # =====================================================
 # VERSÃO E LINK DIRETO DO GITHUB RELEASES
 # =====================================================
-VERSAO_LATEST = "1.0.5"
+VERSAO_LATEST = "1.0.6"
 URL_DIRECT_DOWNLOAD = "https://github.com/cartolamusic-boop/media-downloader-updates/releases/download/v1.0.5/Media.Downloader.Studio.Pro.exe"
 
 def enviar_email_chave(email_destino: str, chave: str, plano: str = "Ativada"):
