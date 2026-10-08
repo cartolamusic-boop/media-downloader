@@ -80,10 +80,10 @@ def salvar_ou_atualizar_nuvem(chave, info):
         print(f"❌ Erro ao salvar no Supabase: {e}")
 
 # =====================================================
-# VERSÃO E LINK DIRETO DO GITHUB RELEASES
+# VERSÃO E LINK DIRETO DO GITHUB RELEASES (CORRIGIDO)
 # =====================================================
-VERSAO_LATEST = "1.0.6"
-URL_DIRECT_DOWNLOAD = "https://github.com/cartolamusic-boop/media-downloader-updates/releases/download/v1.0.5/Media.Downloader.Studio.Pro.exe"
+VERSAO_LATEST = "1.1.7"
+URL_DIRECT_DOWNLOAD = "https://github.com/cartolamusic-boop/media-downloader-updates/releases/latest/download/Instalador_MediaDownloader_Setup.exe"
 
 def enviar_email_chave(email_destino: str, chave: str, plano: str = "Ativada"):
     resend_key = os.getenv("RESEND_API_KEY", "").strip()
