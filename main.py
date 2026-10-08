@@ -1,9 +1,9 @@
 import os
+import re
 import uuid
 import requests
 from datetime import datetime, timezone
 from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse
 
 app = FastAPI()
 
@@ -26,20 +26,24 @@ def obter_ultima_versao_github():
     """Consulta a API do GitHub para pegar dinamicamente a versão (tag) mais recente publicada."""
     try:
         url_github_api = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
-        headers = {"User-Agent": "MediaDownloader-Server"}
+        headers = {
+            "User-Agent": "MediaDownloader-Server",
+            "Accept": "application/vnd.github.v3+json"
+        }
         resp = requests.get(url_github_api, headers=headers, timeout=5)
         if resp.status_code == 200:
             dados = resp.json()
             tag_name = dados.get("tag_name", "").strip()
-            # Remove o 'v' do início da tag caso você use 'v1.1.8' no GitHub
-            versao_limpa = tag_name.lstrip("v")
-            if versao_limpa:
-                return versao_limpa
+            
+            # Extrai apenas o formato de versão X.Y.Z (ex: de 'v1.1.8' ou 'v1.2.0' extrai '1.1.8')
+            match = re.search(r'\d+\.\d+\.\d+', tag_name)
+            if match:
+                return match.group(0)
     except Exception as e:
-        print(f"⚠️ Erro ao buscar versão no GitHub API: {e}")
+        print(f"⚠️ Erro ao buscar versão na API do GitHub: {e}")
     
-    # Versão de backup caso a API do GitHub falhe
-    return "1.1.7"
+    # Versão padrão de backup caso a API do GitHub falhe
+    return "1.1.8"
 
 def carregar_db_nuvem():
     if not SUPABASE_URL or not SUPABASE_KEY:
@@ -146,8 +150,8 @@ def home():
 def checar_atualizacao(versao_cliente: str = "1.0.0"):
     versao_latest = obter_ultima_versao_github()
     
-    # Compara a versão enviada pelo app com a versão mais recente cadastrada no GitHub
-    if versao_cliente != versao_latest:
+    # Compara a versão limpa do app cliente com a tag limpa do GitHub
+    if versao_cliente.strip() != versao_latest.strip():
         return {
             "tem_atualizacao": True,
             "versao": versao_latest,
