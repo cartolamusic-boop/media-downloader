@@ -43,7 +43,7 @@ def obter_ultima_versao_github():
         print(f"⚠️ Erro ao buscar versão na API do GitHub: {e}")
     
     # Versão padrão de backup caso a API do GitHub falhe
-    return "1.1.9"
+    return "1.2.0"
 
 def carregar_db_nuvem():
     if not SUPABASE_URL or not SUPABASE_KEY:
