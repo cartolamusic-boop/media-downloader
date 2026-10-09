@@ -16,7 +16,7 @@ GITHUB_REPO = "cartolamusic-boop/media-downloader-updates"
 URL_DIRECT_DOWNLOAD = f"https://github.com/{GITHUB_REPO}/releases/latest/download/Instalador_MediaDownloader_Setup.exe"
 
 def parse_version(v_str: str):
-    """Converte strings de versão como '1.2.1' ou 'v1.2.1' em tuplas numéricas comparáveis (1, 2, 1)."""
+    """Converte strings de versão como '1.2.2' ou 'v1.2.2' em tuplas numéricas comparáveis (1, 2, 1)."""
     try:
         match = re.search(r'\d+(\.\d+)+', str(v_str))
         if match:
@@ -45,7 +45,7 @@ def obter_ultima_versao_github():
             dados = resp.json()
             tag_name = dados.get("tag_name", "").strip()
             
-            # Extrai apenas o formato de versão X.Y.Z (ex: de 'v1.2.1' extrai '1.2.1')
+            # Extrai apenas o formato de versão X.Y.Z (ex: de 'v1.2.2' extrai '1.2.2')
             match = re.search(r'\d+\.\d+\.\d+', tag_name)
             if match:
                 return match.group(0)
@@ -53,7 +53,7 @@ def obter_ultima_versao_github():
         print(f"⚠️ Erro ao buscar versão na API do GitHub: {e}")
     
     # Versão padrão de backup caso a API do GitHub falhe
-    return "1.2.1"
+    return "1.2.2"
 
 def carregar_db_nuvem():
     if not SUPABASE_URL or not SUPABASE_KEY:
