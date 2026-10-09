@@ -15,6 +15,16 @@ SUPABASE_KEY = os.getenv("SUPABASE_KEY", "").strip()
 GITHUB_REPO = "cartolamusic-boop/media-downloader-updates"
 URL_DIRECT_DOWNLOAD = f"https://github.com/{GITHUB_REPO}/releases/latest/download/Instalador_MediaDownloader_Setup.exe"
 
+def parse_version(v_str: str):
+    """Converte strings de versão como '1.2.1' ou 'v1.2.1' em tuplas numéricas comparáveis (1, 2, 1)."""
+    try:
+        match = re.search(r'\d+(\.\d+)+', str(v_str))
+        if match:
+            return tuple(map(int, match.group(0).split('.')))
+    except Exception:
+        pass
+    return (1, 0, 0)
+
 def get_supabase_headers():
     return {
         "apikey": SUPABASE_KEY,
@@ -35,7 +45,7 @@ def obter_ultima_versao_github():
             dados = resp.json()
             tag_name = dados.get("tag_name", "").strip()
             
-            # Extrai apenas o formato de versão X.Y.Z (ex: de 'v1.1.8' ou 'v1.2.0' extrai '1.1.8')
+            # Extrai apenas o formato de versão X.Y.Z (ex: de 'v1.2.1' extrai '1.2.1')
             match = re.search(r'\d+\.\d+\.\d+', tag_name)
             if match:
                 return match.group(0)
@@ -150,8 +160,8 @@ def home():
 def checar_atualizacao(versao_cliente: str = "1.0.0"):
     versao_latest = obter_ultima_versao_github()
     
-    # Compara a versão limpa do app cliente com a tag limpa do GitHub
-    if versao_cliente.strip() != versao_latest.strip():
+    # Compara numericamente: SÓ aciona atualização se a versão do cliente for ESTRITAMENTE MENOR que a do GitHub
+    if parse_version(versao_cliente) < parse_version(versao_latest):
         return {
             "tem_atualizacao": True,
             "versao": versao_latest,
